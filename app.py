@@ -82,18 +82,6 @@ def get_random_wishes():
         user_last_sent['sent_wishes'] = selected_wishes  # Обновляем отправленные пожелания
         return selected_wishes
 
-def process_messages():
-    updates = get_updates()
-    for update in updates:
-        chat_id = update.get('chatId')
-        text = base64.b64decode(update.get('text')).decode()
-        if 'youtube.com' in text or 'youtu.be' in text:
-            logging.info(f'Найдена YouTube ссылка в чате {chat_id}: {text}')
-            wishes_to_send = get_random_wishes()
-            message = '\n'.join(wishes_to_send)
-            send_message(chat_id, message)
-        else:
-            logging.info(f'Получено сообщение без YouTube ссылки в чате {chat_id}')
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
