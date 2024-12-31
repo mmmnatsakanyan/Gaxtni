@@ -4,7 +4,7 @@ import base64
 import json
 import requests
 from flask import Flask, jsonify
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 
 app = Flask(__name__)
@@ -82,6 +82,20 @@ def get_random_wishes():
         user_last_sent['sent_wishes'] = selected_wishes  # Обновляем отправленные пожелания
         return selected_wishes
 
+def process_messages():
+    updates = get_updates()
+    for update in updates:
+        chat_id = update.get('chatId')
+        text = base64.b64decode(update.get('text')).decode()
+        
+        if text == "/top":
+            # Если команда /top, отправляем "1"
+            send_message(chat_id, "1")
+        else:
+            # В любом другом случае, отправляем случайные новогодние пожелания
+            wishes_to_send = get_random_wishes()
+            message = '\n'.join(wishes_to_send)
+            send_message(chat_id, message)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
