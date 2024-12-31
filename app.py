@@ -1,8 +1,10 @@
 import os
+import random
 import base64
+import json
 import requests
-from flask import Flask, jsonify, send_file
-import yt_dlp
+from flask import Flask, jsonify
+from datetime import datetime, timedelta
 import logging
 
 app = Flask(__name__)
@@ -24,6 +26,13 @@ if not YOAI_API_KEY:
     logging.error('API-ключ YoAI не найден. Установите переменную окружения YOAI_API_KEY.')
     exit(1)
 
+# Загружаем пожелания из wishes.json
+with open('wishes.json', 'r', encoding='utf-8') as f:
+    wishes = json.load(f)
+
+# Словарь для отслеживания отправленных пожеланий
+user_last_sent = {}
+
 @app.route('/')
 def home():
     return 'Сервер работает! Бот готов к работе.', 200
@@ -40,7 +49,7 @@ def get_updates():
         logging.error(f'Ошибка при получении обновлений: {response.status_code}')
         return []
 
-def send_message(chat_id, text, file_path=None):
+def send_message(chat_id, text):
     headers = {
         'Content-Type': 'application/json',
         'X-YoAI-API-Key': YOAI_API_KEY
@@ -49,42 +58,29 @@ def send_message(chat_id, text, file_path=None):
         'chatId': chat_id,
         'text': base64.b64encode(text.encode()).decode()
     }
-    if file_path:
-        with open(file_path, 'rb') as f:
-            files = {
-                'file': (os.path.basename(file_path), f, 'audio/mpeg')
-            }
-            response = requests.post(SEND_MESSAGE_URL, headers=headers, data=data, files=files)
-    else:
-        response = requests.post(SEND_MESSAGE_URL, headers=headers, json=data)
+    response = requests.post(SEND_MESSAGE_URL, headers=headers, json=data)
     
     if response.status_code == 200:
         logging.info(f'Сообщение отправлено в чат {chat_id}')
     else:
         logging.error(f'Ошибка при отправке сообщения: {response.status_code}')
 
-def download_youtube_audio(url):
-    try:
-        output_dir = 'downloads'
-        os.makedirs(output_dir, exist_ok=True)
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': f'{output_dir}/%(title)s.%(ext)s',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'quiet': True,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info_dict).replace('.webm', '.mp3').replace('.m4a', '.mp3')
-            logging.debug(f'Скачанный файл: {filename}')
-            return filename
-    except Exception as e:
-        logging.exception('Ошибка при загрузке аудио:')
-        return None
+def get_random_wishes():
+    # Получаем текущую дату для отслеживания
+    today = datetime.now().date()
+    
+    # Отслеживаем, когда пользователю в последний раз отправлялись пожелания
+    sent_today = user_last_sent.get('date') == today
+    
+    if sent_today:
+        # Если пожелания уже были отправлены сегодня, то берем не более 3 случайных
+        return random.sample(wishes, 3)  # Берем 3 случайных пожелания
+    else:
+        # Если пожелания еще не отправлялись, выбираем 1-3 случайных пожелания
+        selected_wishes = random.sample(wishes, random.randint(1, 3))  # 1-3 пожелания
+        user_last_sent['date'] = today  # Обновляем дату отправки
+        user_last_sent['sent_wishes'] = selected_wishes  # Обновляем отправленные пожелания
+        return selected_wishes
 
 def process_messages():
     updates = get_updates()
@@ -93,11 +89,9 @@ def process_messages():
         text = base64.b64decode(update.get('text')).decode()
         if 'youtube.com' in text or 'youtu.be' in text:
             logging.info(f'Найдена YouTube ссылка в чате {chat_id}: {text}')
-            mp3_file = download_youtube_audio(text)
-            if mp3_file:
-                send_message(chat_id, 'Вот ваш MP3 файл:', mp3_file)
-            else:
-                send_message(chat_id, 'Не удалось загрузить аудио. Пожалуйста, проверьте ссылку.')
+            wishes_to_send = get_random_wishes()
+            message = '\n'.join(wishes_to_send)
+            send_message(chat_id, message)
         else:
             logging.info(f'Получено сообщение без YouTube ссылки в чате {chat_id}')
 
